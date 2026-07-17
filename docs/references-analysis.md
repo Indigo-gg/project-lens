@@ -1,23 +1,25 @@
 # Project-Lens 参考项目分析
 
 > 基于 `docs/advise.md` 报告中提到的开源项目，按 plan-v4-final 的需求进行相关性评估。
+>
+> **迁移宪法检验**：所有借鉴项已通过 `migration-constitution.md` 六条宪法检验。
 
 ---
 
-## 一、与 plan-v4-final 的需求映射
+## 一、与 Constitution 的需求映射
 
-plan-v4-final 需要的核心能力：
+> **原则：迁移机制，不迁移功能。迁移 Implementation，不迁移 Interpretation。**
 
-| 需求 | 对应参考项目 |
-|:---|:---|
-| tree-sitter AST 解析 → Fact 提取 | codebase-memory-mcp, CocoIndex |
-| SQLite 知识图谱存储 | codebase-memory-mcp |
-| MCP Server 实现 | codebase-memory-mcp, GitHub MCP Server |
-| 代码搜索 (search_evidence) | codebase-memory-mcp, CodeRAG |
-| 断言验证 (verify_statement) | LiSSA, LinkAnchor |
-| JD/简历结构化解析 | BAML 生态 |
-| 开发者能力图谱 (extract_capabilities) | Kognit, GitIQ |
-| Git 历史分析 → Decision Trace | GitIQ |
+| 迁移什么 Primitive | 对应 Constitution 条款 | 对应参考项目 | 对应 Lens 模块 |
+|:---|:---|:---|:---|
+| AST → Fact → Edge | 第一条（机制） | codebase-memory-mcp, CocoIndex | extractor/ |
+| SQLite 图谱存储 | 第一条（机制） | codebase-memory-mcp | store.ts |
+| MCP Server | 第一条（机制） | codebase-memory-mcp, GitHub MCP | mcp/ |
+| FTS + Hybrid Search | 第一条（机制） | codebase-memory-mcp, CodeRAG | query/ |
+| Git Signal → Evidence | 第二条（Implementation） | GitIQ | evidence/ |
+| Trace Recovery | 第二条（Implementation） | LiSSA | verify/ |
+| ~~JD/简历结构化解析~~ | ~~不属于 Lens~~ | ~~BAML 生态~~ | **拒绝** |
+| ~~开发者能力图谱~~ | ~~Interpretation~~ | ~~Kognit, GitIQ~~ | **拒绝** |
 
 ---
 
@@ -198,23 +200,58 @@ plan-v4-final 需要的核心能力：
 
 ---
 
-## 五、推荐优先级
+## 五、宪法评分（基于 migration-constitution.md）
 
-| 优先级 | 项目 | 原因 |
-|:---|:---|:---|
-| **必须深入研究** | codebase-memory-mcp | 架构几乎完全对齐 plan-v4，SQLite 知识图谱 + tree-sitter + MCP |
-| **必须深入研究** | Kognit | Capability Extraction 的最佳参考 |
-| **重点参考** | CocoIndex | AST-aware 代码搜索策略 |
-| **重点参考** | GitIQ | Git 信号提取 + Decision Trace |
-| **选择性参考** | LiSSA | Statement Verification 的溯源逻辑 |
-| **选择性参考** | BAML 生态 | JD Parser 的结构化提取 |
-| **了解即可** | 其余项目 | MCP 实现模式、学术方案等 |
+| 项目 | Mechanism | Constitution | Reuse | Pollution | 宪法裁决 |
+|:---|:---|:---|:---|:---|:---|
+| **codebase-memory-mcp** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ✅ **核心参考** |
+| **CocoIndex** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐ | ✅ 重点参考 |
+| **GitIQ** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ✅ 重点参考 |
+| **LiSSA** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ | ⭐ | ✅ 选择性参考 |
+| **CodeRAG** | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐ | ✅ 了解即可 |
+| **GitHub MCP** | ⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ | ✅ 了解即可 |
+| **Kognit** | ⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ❌ **一票否决** |
+| **BAML 生态** | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ❌ 整体拒绝 |
+| **LinkAnchor** | ⭐⭐ | ⭐⭐⭐⭐ | ⭐ | ⭐ | ❌ 功能重叠 |
+| **Web3Insight** | ⭐ | ⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ❌ 领域不匹配 |
+
+**关键发现**：Kognit 的 Product Pollution 极高（⭐⭐⭐⭐⭐），不是技术不好，而是产品边界会污染 Lens。
 
 ---
 
-## 六、下一步行动
+## 六、宪法检验记录
 
-1. **克隆 codebase-memory-mcp**，深入分析其 SQLite 表设计、tree-sitter 查询规则、MCP Tool Schema
-2. **克隆 Kognit**，分析其 Capability Extraction 的映射规则和多智能体架构
-3. **克隆 CocoIndex**，学习其 AST-aware 分块和索引策略
-4. **将学习成果整合到 plan-v4-final 的实现中**
+| 参考项目 | 迁移什么机制 | Constitution 条款 | 结果 |
+|:---|:---|:---|:---|
+| codebase-memory-mcp | tree-sitter + SQLite + Fact Graph | 第一条 | ✅ 通过 |
+| codebase-memory-mcp | MCP Server 骨架 | 第一条 | ✅ 通过 |
+| codebase-memory-mcp | 文件哈希 + 增量更新 | 第一条 | ✅ 通过 |
+| CocoIndex | AST-aware 分块策略 | 第一条 | ✅ 通过 |
+| GitIQ | commit → signal extraction | 第二条 | ✅ 通过 |
+| LiSSA | trace recovery + 置信度 | 第二条 | ✅ 通过 |
+| Kognit | Capability Extraction | 第二条 ❌ | **拒绝** |
+| Kognit | Developer Profile | 第六条 ❌ | **拒绝** |
+| BAML | JD 结构化解析 | 第六条 ❌ | **拒绝** |
+
+---
+
+## 七、实施优先级
+
+### P0: 必须实现（删掉会废掉 Lens）
+
+1. tree-sitter AST 解析 — 来源：codebase-memory-mcp
+2. Fact/Edge 数据模型 — 来源：codebase-memory-mcp
+3. SQLite 图谱存储 — 来源：codebase-memory-mcp
+4. MCP Server 骨架 — 来源：codebase-memory-mcp
+
+### P1: 应该实现（增强核心能力）
+
+5. AST-aware 分块 — 来源：CocoIndex
+6. Git signal extraction — 来源：GitIQ
+7. 置信度计算 — 来源：LiSSA
+8. 混合搜索 — 来源：CodeRAG
+
+### P2: 可选实现（锦上添花）
+
+9. 图遍历路径发现 — 来源：codebase-memory-mcp
+10. 文件哈希增量更新 — 来源：codebase-memory-mcp

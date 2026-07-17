@@ -1,4 +1,3 @@
-export { searchEvidence, type SearchOptions, type SearchResult, type SearchResponse } from './search.js';
-export { expandRequirement, expandSearchTerms, type ExpandedQuery } from './requirement-expander.js';
-export { rankEvidence, updateEvidenceScores, type RankedResult, type RankingOptions } from './ranking.js';
-export { getDecisionTrace, type DecisionTrace, type DecisionTraceResponse } from './decision-trace.js';
+export { explore, type ExploreOptions, type ExploreResult, type ExploreResponse } from './explore.js';
+export { rankEvidence, updateEvidenceScores, type RankedResult, type RankingOptions, type CredibilityScore, type ImportanceScore } from './ranking.js';
+export { trace, type TraceOptions, type TraceTimeline, type TraceResponse } from './trace.js';

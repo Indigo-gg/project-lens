@@ -1,17 +1,16 @@
 import path from 'path';
 import { openDatabase } from '../../store.js';
-import { searchEvidence, type SearchOptions } from '../../query/search.js';
+import { explore, type ExploreOptions } from '../../query/explore.js';
 
-export async function handleSearchEvidence(args: {
+export async function handleExplore(args: {
   query?: string;
   category?: string;
   evidence_type?: string;
   fact_type?: string;
-  relation?: string;
-  requirement?: string;
-  sort_by?: 'score' | 'recent' | 'author';
+  sort_by?: 'credibility' | 'importance' | 'recent';
   limit?: number;
   cursor?: string;
+  context_scope?: string[];
 }): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   // Get project name from cwd or infer it
   const projectPath = process.cwd();
@@ -20,19 +19,18 @@ export async function handleSearchEvidence(args: {
   const { db, close } = openDatabase(projectName);
 
   try {
-    const options: SearchOptions = {
+    const options: ExploreOptions = {
       query: args.query,
       category: args.category,
       evidence_type: args.evidence_type,
       fact_type: args.fact_type,
-      relation: args.relation,
-      requirement: args.requirement,
       sort_by: args.sort_by,
       limit: args.limit,
       cursor: args.cursor,
+      context_scope: args.context_scope,
     };
 
-    const result = searchEvidence(db, projectName, options);
+    const result = explore(db, projectName, options);
 
     return {
       content: [{
