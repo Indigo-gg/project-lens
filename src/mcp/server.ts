@@ -1,20 +1,21 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { handleAnalyzeProject } from './tools/analyze-project.js';
-import { handleSearchEvidence } from './tools/search-evidence.js';
-import { handleVerifyStatement } from './tools/verify-statement.js';
-import { handleExportSnapshot } from './tools/export-snapshot.js';
-import { handleRenderResume } from './tools/render-resume.js';
+import { handleObserve } from './tools/observe.js';
+import { handleExplore } from './tools/explore.js';
+import { handleTrace } from './tools/trace.js';
+import { handleVerifyStatement } from './tools/verify.js';
+import { handleExportSnapshot } from './tools/snapshot.js';
+import { handleRender } from './tools/render.js';
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
     name: 'project-lens',
-    version: '2.0.0',
+    version: '6.0.0',
   });
 
-  // Tool 1: analyze_project
-  server.registerTool('analyze_project', {
+  // Tool 1: observe
+  server.registerTool('observe', {
     description: 'Scan a project and build its knowledge index (facts, edges, evidence)',
     inputSchema: {
       project_path: z.string().optional().describe('Project root path (default: cwd)'),
@@ -22,31 +23,30 @@ export function createMcpServer(): McpServer {
       force_reindex: z.boolean().optional().default(false).describe('Force full re-index'),
     },
   }, async (args) => {
-    const result = await handleAnalyzeProject(args);
+    const result = await handleObserve(args);
     return result;
   });
 
-  // Tool 2: search_evidence
-  server.registerTool('search_evidence', {
-    description: 'Universal search across facts and evidence. Supports keyword, category, requirement, and relation queries.',
+  // Tool 2: explore
+  server.registerTool('explore', {
+    description: 'Explore project knowledge, provide navigation paths. Answers "how does this feature work?"',
     inputSchema: {
       query: z.string().optional().describe('Full-text search keyword'),
       category: z.string().optional().describe('Filter by category (performance, security, data, ...)'),
       evidence_type: z.string().optional().describe('Filter by evidence type (git_commit, test, benchmark, dependency)'),
       fact_type: z.string().optional().describe('Filter by fact type (function, class, interface, module)'),
-      relation: z.string().optional().describe('Search by relation type (decision → Decision Trace)'),
-      requirement: z.string().optional().describe('Search by JD requirement (auto-expands to search terms)'),
-      sort_by: z.enum(['score', 'recent', 'author']).optional().default('score').describe('Sort results by'),
+      sort_by: z.enum(['credibility', 'importance', 'recent']).optional().default('credibility').describe('Sort results by'),
       limit: z.number().optional().default(20).describe('Max results to return'),
       cursor: z.string().optional().describe('Pagination cursor'),
+      context_scope: z.array(z.string()).optional().describe('Limit search scope to specific paths'),
     },
   }, async (args) => {
-    const result = await handleSearchEvidence(args);
+    const result = await handleExplore(args);
     return result;
   });
 
-  // Tool 3: verify_statement
-  server.registerTool('verify_statement', {
+  // Tool 3: verify
+  server.registerTool('verify', {
     description: 'Verify whether a statement has supporting code evidence',
     inputSchema: {
       statement: z.string().describe('Statement to verify (e.g., "优化了缓存性能")'),
@@ -57,8 +57,25 @@ export function createMcpServer(): McpServer {
     return result;
   });
 
-  // Tool 4: export_snapshot
-  server.registerTool('export_snapshot', {
+  // Tool 4: trace
+  server.registerTool('trace', {
+    description: 'Trace decision history, understand why something was implemented',
+    inputSchema: {
+      query: z.string().optional().describe('Search keyword'),
+      fact_id: z.number().optional().describe('Limit to specific fact'),
+      filepath: z.string().optional().describe('Limit to specific file'),
+      author: z.string().optional().describe('Limit to specific author'),
+      date_from: z.string().optional().describe('Start date (ISO format)'),
+      date_to: z.string().optional().describe('End date (ISO format)'),
+      limit: z.number().optional().default(50).describe('Max results to return'),
+    },
+  }, async (args) => {
+    const result = await handleTrace(args);
+    return result;
+  });
+
+  // Tool 5: snapshot
+  server.registerTool('snapshot', {
     description: 'Export the project knowledge package (Project Snapshot) for an AI agent',
     inputSchema: {
       format: z.enum(['json', 'compact']).optional().default('compact').describe('Output format'),
@@ -70,15 +87,15 @@ export function createMcpServer(): McpServer {
     return result;
   });
 
-  // Tool 5: render_resume
-  server.registerTool('render_resume', {
-    description: 'Render a resume JSON to PDF using Typst',
+  // Tool 6: render
+  server.registerTool('render', {
+    description: 'Render JSON data to PDF using Typst',
     inputSchema: {
-      resume_json: z.string().describe('Resume JSON string'),
+      json_data: z.string().describe('JSON data string'),
       template: z.string().optional().default('modern').describe('Template name'),
     },
   }, async (args) => {
-    const result = await handleRenderResume(args);
+    const result = await handleRender(args);
     return result;
   });
 

@@ -1,171 +1,245 @@
+import { Parser, Language } from 'web-tree-sitter';
 import path from 'path';
 
 export interface AstNode {
   type: string;
   name: string;
+  qualifiedName: string;
+  filePath: string;
   startLine: number;
   endLine: number;
   properties: Record<string, unknown>;
+  children: AstNode[];
 }
+
+let parserInstance: Parser | null = null;
+const loadedLanguages: Map<string, Language> = new Map();
 
 const SUPPORTED_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
-  '.py', '.go',
+  '.ts', '.tsx', '.js', '.jsx',
+  '.py',
+  '.go',
 ]);
 
-let parserReady = false;
-
-export function isParserReady(): boolean {
-  return parserReady;
-}
-
 export function isSupportedFile(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
   return SUPPORTED_EXTENSIONS.has(ext);
 }
 
+function getLanguageForFile(filePath: string): string {
+  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+  switch (ext) {
+    case '.ts':
+    case '.tsx':
+    case '.js':
+    case '.jsx':
+      return 'typescript';
+    case '.py':
+      return 'python';
+    case '.go':
+      return 'go';
+    default:
+      return 'unknown';
+  }
+}
+
 export async function initParser(): Promise<void> {
-  // Tree-sitter WASM initialization placeholder
-  parserReady = true;
+  if (parserInstance) return;
+
+  await Parser.init();
+  parserInstance = new Parser();
+
+  // Load language WASMs from tree-sitter-wasms
+  const wasmDir = path.join(
+    path.dirname(require.resolve('tree-sitter-wasms')),
+    '..', 'out'
+  );
+
+  const wasmFiles: Record<string, string> = {
+    typescript: 'tree-sitter-typescript.wasm',
+    python: 'tree-sitter-python.wasm',
+    go: 'tree-sitter-go.wasm',
+  };
+
+  for (const [name, wasmFile] of Object.entries(wasmFiles)) {
+    try {
+      const wasmPath = path.join(wasmDir, wasmFile);
+      const lang = await Language.load(wasmPath);
+      loadedLanguages.set(name, lang);
+    } catch (err) {
+      console.warn(`Failed to load ${name} language: ${err}`);
+    }
+  }
 }
 
 export async function parseFile(
   filePath: string,
   content: string
 ): Promise<{ nodes: AstNode[]; language: string; error?: string }> {
-  const ext = path.extname(filePath).toLowerCase();
+  if (!parserInstance) {
+    return { nodes: [], language: 'unknown', error: 'Parser not initialized' };
+  }
+
+  const langName = getLanguageForFile(filePath);
+  const lang = loadedLanguages.get(langName);
+
+  if (!lang) {
+    return { nodes: [], language: langName, error: `Language not supported: ${langName}` };
+  }
+
+  parserInstance.setLanguage(lang);
 
   try {
-    switch (ext) {
-      case '.ts':
-      case '.tsx':
-      case '.js':
-      case '.jsx':
-      case '.mjs':
-      case '.cjs':
-        return { nodes: parseTypeScript(content), language: 'typescript' };
-      case '.py':
-        return { nodes: parsePython(content), language: 'python' };
-      case '.go':
-        return { nodes: parseGo(content), language: 'go' };
-      default:
-        return { nodes: [], language: 'unknown', error: `Unsupported file type: ${ext}` };
+    const tree = parserInstance.parse(content);
+    if (!tree) {
+      return { nodes: [], language: langName, error: 'Parse returned null' };
     }
+    const nodes = extractNodes(tree.rootNode, filePath, '', content);
+    return { nodes, language: langName };
   } catch (err) {
-    return { nodes: [], language: 'unknown', error: String(err) };
+    return {
+      nodes: [],
+      language: langName,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
-function parseTypeScript(content: string): AstNode[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractNodes(
+  node: any,
+  filePath: string,
+  parentQualifiedName: string,
+  content: string
+): AstNode[] {
   const nodes: AstNode[] = [];
-  const lines = content.split('\n');
+  const nodeType = node.type;
 
-  // Simple regex-based extraction for TypeScript/JavaScript
-  const patterns: Array<{ regex: RegExp; type: string; nameGroup: number }> = [
-    { regex: /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/gm, type: 'function_declaration', nameGroup: 1 },
-    { regex: /^(?:export\s+)?class\s+(\w+)/gm, type: 'class_declaration', nameGroup: 1 },
-    { regex: /^(?:export\s+)?interface\s+(\w+)/gm, type: 'interface_declaration', nameGroup: 1 },
-    { regex: /^(?:export\s+)?type\s+(\w+)/gm, type: 'type_alias_declaration', nameGroup: 1 },
-    { regex: /^(?:export\s+)?enum\s+(\w+)/gm, type: 'enum_declaration', nameGroup: 1 },
-    { regex: /^(?:export\s+)?const\s+(\w+)\s*=/gm, type: 'variable_declaration', nameGroup: 1 },
-    { regex: /^(?:export\s+)?let\s+(\w+)\s*=/gm, type: 'variable_declaration', nameGroup: 1 },
-    { regex: /^(?:export\s+)?(?:async\s+)?(\w+)\s*\([^)]*\)\s*(?::\s*\w+)?\s*\{/gm, type: 'method_definition', nameGroup: 1 },
-    { regex: /^import\s+.*from\s+['"]([^'"]+)['"]/gm, type: 'import_statement', nameGroup: 1 },
-    { regex: /^import\s*\(\s*['"]([^'"]+)['"]\s*\)/gm, type: 'import_statement', nameGroup: 1 },
-  ];
+  if (isExtractableType(nodeType)) {
+    const name = getNodeId(node, content);
+    const qualifiedName = parentQualifiedName
+      ? `${parentQualifiedName}.${name}`
+      : name;
 
-  for (const { regex, type, nameGroup } of patterns) {
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-      const name = match[nameGroup];
-      if (!name) continue;
+    const astNode: AstNode = {
+      type: mapNodeType(nodeType),
+      name,
+      qualifiedName: `${filePath}::${qualifiedName}`,
+      filePath,
+      startLine: node.startPosition.row + 1,
+      endLine: node.endPosition.row + 1,
+      properties: extractProperties(node, content),
+      children: [],
+    };
 
-      const beforeMatch = content.substring(0, match.index);
-      const startLine = beforeMatch.split('\n').length;
-      const matchEnd = match.index + match[0].length;
-      const afterMatch = content.substring(matchEnd);
-      const endLine = startLine + (match[0].split('\n').length - 1);
+    nodes.push(astNode);
 
-      nodes.push({
-        type,
-        name,
-        startLine,
-        endLine: Math.min(endLine, lines.length),
-        properties: { text: match[0] },
-      });
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child) {
+        const childNodes = extractNodes(child, filePath, qualifiedName, content);
+        astNode.children.push(...childNodes);
+      }
+    }
+  } else {
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child) {
+        nodes.push(...extractNodes(child, filePath, parentQualifiedName, content));
+      }
     }
   }
 
   return nodes;
 }
 
-function parsePython(content: string): AstNode[] {
-  const nodes: AstNode[] = [];
-  const lines = content.split('\n');
-
-  const patterns: Array<{ regex: RegExp; type: string; nameGroup: number }> = [
-    { regex: /^def\s+(\w+)\s*\(/gm, type: 'function_definition', nameGroup: 1 },
-    { regex: /^class\s+(\w+)\s*[:(]/gm, type: 'class_definition', nameGroup: 1 },
-    { regex: /^(\w+)\s*=\s*(?:lambda|function)/gm, type: 'variable_declaration', nameGroup: 1 },
-    { regex: /^(?:from\s+\S+\s+)?import\s+(\w+)/gm, type: 'import_statement', nameGroup: 1 },
-  ];
-
-  for (const { regex, type, nameGroup } of patterns) {
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-      const name = match[nameGroup];
-      if (!name) continue;
-
-      const beforeMatch = content.substring(0, match.index);
-      const startLine = beforeMatch.split('\n').length;
-      const matchEnd = match.index + match[0].length;
-      const endLine = startLine + (match[0].split('\n').length - 1);
-
-      nodes.push({
-        type,
-        name,
-        startLine,
-        endLine: Math.min(endLine, lines.length),
-        properties: { text: match[0] },
-      });
-    }
-  }
-
-  return nodes;
+function isExtractableType(type: string): boolean {
+  const extractableTypes = new Set([
+    'function_declaration',
+    'arrow_function',
+    'function',
+    'class_declaration',
+    'interface_declaration',
+    'type_alias_declaration',
+    'method_definition',
+    'public_field_definition',
+    'export_statement',
+    'lexical_declaration',
+    'variable_declaration',
+    'function_definition',
+    'class_definition',
+    'decorated_definition',
+    'method_declaration',
+    'type_declaration',
+    'struct_type',
+    'interface_type',
+  ]);
+  return extractableTypes.has(type);
 }
 
-function parseGo(content: string): AstNode[] {
-  const nodes: AstNode[] = [];
-  const lines = content.split('\n');
+function mapNodeType(type: string): string {
+  const mapping: Record<string, string> = {
+    function_declaration: 'function',
+    arrow_function: 'function',
+    function: 'function',
+    class_declaration: 'class',
+    interface_declaration: 'interface',
+    type_alias_declaration: 'type',
+    method_definition: 'method',
+    public_field_definition: 'property',
+    export_statement: 'export',
+    lexical_declaration: 'variable',
+    variable_declaration: 'variable',
+    function_definition: 'function',
+    class_definition: 'class',
+    decorated_definition: 'decorated',
+    method_declaration: 'method',
+    type_declaration: 'type',
+    struct_type: 'struct',
+    interface_type: 'interface',
+  };
+  return mapping[type] || type;
+}
 
-  const patterns: Array<{ regex: RegExp; type: string; nameGroup: number }> = [
-    { regex: /^func\s+(?:\([^)]+\)\s+)?(\w+)\s*\(/gm, type: 'function_declaration', nameGroup: 1 },
-    { regex: /^type\s+(\w+)\s+struct/gm, type: 'type_declaration', nameGroup: 1 },
-    { regex: /^type\s+(\w+)\s+interface/gm, type: 'type_declaration', nameGroup: 1 },
-    { regex: /^import\s+\(\s*\n([\s\S]*?)\n\s*\)/gm, type: 'import_statement', nameGroup: 1 },
-    { regex: /^import\s+"([^"]+)"/gm, type: 'import_statement', nameGroup: 1 },
-  ];
-
-  for (const { regex, type, nameGroup } of patterns) {
-    let match;
-    while ((match = regex.exec(content)) !== null) {
-      const name = match[nameGroup];
-      if (!name) continue;
-
-      const beforeMatch = content.substring(0, match.index);
-      const startLine = beforeMatch.split('\n').length;
-      const matchEnd = match.index + match[0].length;
-      const endLine = startLine + (match[0].split('\n').length - 1);
-
-      nodes.push({
-        type,
-        name,
-        startLine,
-        endLine: Math.min(endLine, lines.length),
-        properties: { text: match[0] },
-      });
+function getNodeId(node: { type: string; childCount: number; child: (i: number) => any; parent: any; startIndex: number; endIndex: number }, content: string): string {
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child && (child.type === 'identifier' || child.type === 'type_identifier')) {
+      return content.slice(child.startIndex, child.endIndex);
     }
   }
 
-  return nodes;
+  if (node.type === 'arrow_function' || node.type === 'function') {
+    const parent = node.parent;
+    if (parent) {
+      for (let i = 0; i < parent.childCount; i++) {
+        const child = parent.child(i);
+        if (child && child.type === 'identifier') {
+          return content.slice(child.startIndex, child.endIndex);
+        }
+      }
+    }
+  }
+
+  return '<anonymous>';
+}
+
+function extractProperties(node: { type: string; endPosition: { row: number }; startIndex: number; endIndex: number; childCount: number; child: (i: number) => any }, content: string): Record<string, unknown> {
+  const props: Record<string, unknown> = {};
+  props.lineCount = node.endPosition.row - (node as any).startPosition.row + 1;
+
+  const text = content.slice(node.startIndex, node.endIndex);
+  props.text = text.substring(0, 1000);
+
+  if (node.type === 'function_declaration' || node.type === 'function_definition') {
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child && (child.type === 'formal_parameters' || child.type === 'parameters')) {
+        props.parameters = content.slice(child.startIndex, child.endIndex);
+        break;
+      }
+    }
+  }
+
+  return props;
 }

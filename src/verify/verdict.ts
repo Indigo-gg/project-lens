@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { extractKeywords, type ExtractedKeywords } from './keyword-extractor.js';
 import { computeConfidence, type ConfidenceResult } from './confidence.js';
-import { searchEvidence, type SearchOptions } from '../query/search.js';
+import { explore, type ExploreOptions } from '../query/explore.js';
 
 export interface VerifyResult {
   confidence: number;
@@ -30,7 +30,7 @@ export function verifyStatement(
   const searchQuery = searchTerms.join(' ');
 
   // 3. Search for matching evidence
-  const searchResult = searchEvidence(db, project, {
+  const searchResult = explore(db, project, {
     query: searchQuery,
     limit: 20,
     context_scope: contextScope,

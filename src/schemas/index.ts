@@ -3,3 +3,6 @@ export type { Fact, FactEdge, FactType, ProjectMetadata } from './fact.js';
 
 export { EvidenceSchema, DecisionTraceSchema } from './evidence.js';
 export type { Evidence, DecisionTrace, EvidenceType, ChangeType } from './evidence.js';
+
+export { CredibilityScoreSchema, ImportanceScoreSchema, RankedResultSchema } from './ranking.js';
+export type { CredibilityScore, ImportanceScore, RankedResult } from './ranking.js';

@@ -30,30 +30,25 @@ function validateProjectPath(projectPath: string): { valid: boolean; error?: str
   return { valid: true };
 }
 
-export async function handleAnalyzeProject(args: {
+export async function handleObserve(args: {
   project_path?: string;
-  depth?: number;
   force_reindex?: boolean;
 }): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const projectPath = args.project_path ?? process.cwd();
 
-  // Validate path
   const validation = validateProjectPath(projectPath);
   if (!validation.valid) {
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          error: validation.error,
-          project_path: projectPath,
-        }),
+        text: JSON.stringify({ error: validation.error }),
       }],
     };
   }
 
   try {
     const result = await extractProject(projectPath, {
-      forceReindex: args.force_reindex,
+      forceReindex: args.force_reindex ?? false,
     });
 
     return {
@@ -68,7 +63,6 @@ export async function handleAnalyzeProject(args: {
         type: 'text',
         text: JSON.stringify({
           error: err instanceof Error ? err.message : String(err),
-          project_path: projectPath,
         }),
       }],
     };

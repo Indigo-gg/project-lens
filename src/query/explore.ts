@@ -1,21 +1,18 @@
 import Database from 'better-sqlite3';
-import { expandRequirement, expandSearchTerms } from './requirement-expander.js';
 import { rankEvidence, type RankedResult } from './ranking.js';
 
-export interface SearchOptions {
+export interface ExploreOptions {
   query?: string;
   category?: string;
   evidence_type?: string;
   fact_type?: string;
-  relation?: string;
-  requirement?: string;
-  sort_by?: 'score' | 'recent' | 'author';
+  sort_by?: 'credibility' | 'importance' | 'recent';
   limit?: number;
   cursor?: string;
   context_scope?: string[];
 }
 
-export interface SearchResult {
+export interface ExploreResult {
   fact: {
     id: number;
     type: string;
@@ -31,35 +28,43 @@ export interface SearchResult {
     timestamp?: string;
     description?: string;
   }>;
-  score: number;
-  decision_trace?: Array<{
-    commit_hash: string;
-    author: string;
-    timestamp: string;
-    change_type: string;
-    description: string;
+  credibility: {
+    has_benchmark: boolean;
+    has_test: boolean;
+    has_docs: boolean;
+    has_git_history: boolean;
+    score: number;
+  };
+  importance: {
+    centrality: number;
+    frequency: number;
+    recency: number;
+    score: number;
+  };
+}
+
+export interface ExploreResponse {
+  results: ExploreResult[];
+  next_cursor?: string;
+  total_count: number;
+  navigation_guide?: Array<{
+    from: string;
+    to: string;
+    via: string;
   }>;
 }
 
-export interface SearchResponse {
-  results: SearchResult[];
-  next_cursor?: string;
-  total_count: number;
-}
-
-export function searchEvidence(
+export function explore(
   db: Database.Database,
   project: string,
-  options: SearchOptions
-): SearchResponse {
+  options: ExploreOptions
+): ExploreResponse {
   const {
     query,
     category,
     evidence_type,
     fact_type,
-    relation,
-    requirement,
-    sort_by = 'score',
+    sort_by = 'credibility',
     limit = 20,
     cursor,
     context_scope,
@@ -76,22 +81,11 @@ export function searchEvidence(
     }
   }
 
-  // Build search terms
+  // Build search terms from query
   let searchTerms: string[] = [];
-  let expandedCategory = category ?? null;
-
-  if (requirement) {
-    const expanded = expandRequirement(requirement, db);
-    searchTerms = expanded.searchTerms;
-    expandedCategory = expanded.category ?? category ?? null;
-  }
-
   if (query) {
-    searchTerms.push(...query.split(/\s+/).filter(Boolean));
+    searchTerms = query.split(/\s+/).filter(Boolean);
   }
-
-  // Deduplicate search terms
-  searchTerms = [...new Set(searchTerms)];
 
   // Build SQL query
   let sql = `
@@ -144,11 +138,10 @@ export function searchEvidence(
   const ranked = rankEvidence(db, project, nodeIds);
 
   // Build results
-  const results: SearchResult[] = [];
+  const results: ExploreResult[] = [];
 
   for (const row of rows) {
     const rankInfo = ranked.find(r => r.nodeId === row.id);
-    const score = rankInfo?.score ?? 0;
 
     // Get evidence for this node
     let evidenceSql = 'SELECT type, commit_hash, author, timestamp, description FROM evidence WHERE fact_id = ?';
@@ -166,28 +159,6 @@ export function searchEvidence(
       timestamp: string | null;
       description: string | null;
     }>;
-
-    // Get decision traces if requested
-    let decisionTrace: SearchResult['decision_trace'] | undefined;
-    if (relation === 'decision') {
-      const traceRows = db.prepare(
-        'SELECT commit_hash, author, timestamp, change_type, ast_change FROM decision_traces WHERE fact_id = ? ORDER BY timestamp DESC'
-      ).all(row.id) as Array<{
-        commit_hash: string;
-        author: string;
-        timestamp: string;
-        change_type: string;
-        ast_change: string;
-      }>;
-
-      decisionTrace = traceRows.map(t => ({
-        commit_hash: t.commit_hash,
-        author: t.author,
-        timestamp: t.timestamp,
-        change_type: t.change_type,
-        description: t.ast_change,
-      }));
-    }
 
     // Build summary
     const properties = row.properties ? JSON.parse(row.properties) : {};
@@ -209,8 +180,19 @@ export function searchEvidence(
         timestamp: e.timestamp ?? undefined,
         description: e.description ?? undefined,
       })),
-      score,
-      decision_trace: decisionTrace,
+      credibility: rankInfo?.credibility ?? {
+        has_benchmark: false,
+        has_test: false,
+        has_docs: false,
+        has_git_history: false,
+        score: 0,
+      },
+      importance: rankInfo?.importance ?? {
+        centrality: 0,
+        frequency: 0,
+        recency: 0,
+        score: 0,
+      },
     });
   }
 
@@ -221,15 +203,11 @@ export function searchEvidence(
       const bTime = b.evidence[0]?.timestamp ?? '';
       return bTime.localeCompare(aTime);
     });
-  } else if (sort_by === 'author') {
-    results.sort((a, b) => {
-      const aAuthor = a.evidence[0]?.author ?? '';
-      const bAuthor = b.evidence[0]?.author ?? '';
-      return aAuthor.localeCompare(bAuthor);
-    });
+  } else if (sort_by === 'importance') {
+    results.sort((a, b) => b.importance.score - a.importance.score);
   } else {
-    // Default: sort by score
-    results.sort((a, b) => b.score - a.score);
+    // Default: sort by credibility
+    results.sort((a, b) => b.credibility.score - a.credibility.score);
   }
 
   // Apply offset and limit
@@ -241,11 +219,56 @@ export function searchEvidence(
     nextCursor = JSON.stringify({ offset: offset + limit });
   }
 
+  // Build navigation guide
+  const navigation_guide = buildNavigationGuide(db, project, limitedResults);
+
   return {
     results: limitedResults,
     next_cursor: nextCursor,
     total_count: results.length,
+    navigation_guide,
   };
+}
+
+function buildNavigationGuide(
+  db: Database.Database,
+  project: string,
+  results: ExploreResult[]
+): Array<{ from: string; to: string; via: string }> {
+  if (results.length === 0) return [];
+
+  const guide: Array<{ from: string; to: string; via: string }> = [];
+  const nodeIds = results.map(r => r.fact.id);
+
+  // Find connections between results
+  const placeholders = nodeIds.map(() => '?').join(',');
+  const edges = db.prepare(`
+    SELECT e.source_id, e.target_id, e.type, 
+           s.file_path as source_file, s.name as source_name,
+           t.file_path as target_file, t.name as target_name
+    FROM edges e
+    JOIN nodes s ON e.source_id = s.id
+    JOIN nodes t ON e.target_id = t.id
+    WHERE e.source_id IN (${placeholders}) AND e.target_id IN (${placeholders})
+  `).all(...nodeIds, ...nodeIds) as Array<{
+    source_id: number;
+    target_id: number;
+    type: string;
+    source_file: string;
+    source_name: string;
+    target_file: string;
+    target_name: string;
+  }>;
+
+  for (const edge of edges.slice(0, 5)) { // Limit to 5 navigation paths
+    guide.push({
+      from: `${edge.source_name} (${edge.source_file})`,
+      to: `${edge.target_name} (${edge.target_file})`,
+      via: edge.type,
+    });
+  }
+
+  return guide;
 }
 
 function buildSummary(label: string, name: string, filePath: string, properties: Record<string, unknown>): string {

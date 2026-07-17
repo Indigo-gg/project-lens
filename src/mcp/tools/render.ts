@@ -1,18 +1,13 @@
 import path from 'path';
-import fs from 'fs';
 import os from 'os';
 
-export async function handleRenderResume(args: {
-  resume_json: string;
+export async function handleRender(args: {
+  json_data: string;
   template?: string;
 }): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   try {
-    // Parse the resume JSON
-    const resumeData = JSON.parse(args.resume_json);
-
-    // For now, return a placeholder indicating Typst rendering is needed
-    // Full implementation requires Typst binary installation
-    const outputPath = path.join(os.tmpdir(), `resume-${Date.now()}.pdf`);
+    const data = JSON.parse(args.json_data);
+    const outputPath = path.join(os.tmpdir(), `lens-render-${Date.now()}.pdf`);
 
     return {
       content: [{
@@ -20,7 +15,7 @@ export async function handleRenderResume(args: {
         text: JSON.stringify({
           status: 'not_implemented',
           message: 'Typst rendering requires Typst binary. Use `typst compile` externally.',
-          resume_data: resumeData,
+          data,
           template: args.template ?? 'modern',
           suggested_output: outputPath,
         }, null, 2),

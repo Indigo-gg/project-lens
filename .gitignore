@@ -40,3 +40,12 @@ coverage/
 
 # Reference repos (cloned for research, not source)
 references/
+
+# MiMoCode agent config (has its own node_modules, not project source)
+.mimocode/
+
+# Temporary collaboration guides
+agent-collaboration-guide*.md
+
+# Scratch work
+core_idea/
