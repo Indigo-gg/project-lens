@@ -43,27 +43,30 @@ function getLanguageForFile(filePath: string): string {
   }
 }
 
+export function isParserReady(): boolean {
+  return parserInstance !== null;
+}
+
 export async function initParser(): Promise<void> {
   if (parserInstance) return;
 
   await Parser.init();
   parserInstance = new Parser();
 
-  // Load language WASMs from tree-sitter-wasms
-  const wasmDir = path.join(
-    path.dirname(require.resolve('tree-sitter-wasms')),
-    '..', 'out'
-  );
-
-  const wasmFiles: Record<string, string> = {
-    typescript: 'tree-sitter-typescript.wasm',
-    python: 'tree-sitter-python.wasm',
-    go: 'tree-sitter-go.wasm',
+  // Load language WASMs from each grammar package's own WASM files
+  // (grammar packages ship pre-built WASM compatible with web-tree-sitter v0.26+)
+  const wasmSources: Record<string, string> = {
+    typescript: 'tree-sitter-typescript/tree-sitter-typescript.wasm',
+    python: 'tree-sitter-python/tree-sitter-python.wasm',
+    go: 'tree-sitter-go/tree-sitter-go.wasm',
   };
 
-  for (const [name, wasmFile] of Object.entries(wasmFiles)) {
+  for (const [name, wasmRel] of Object.entries(wasmSources)) {
     try {
-      const wasmPath = path.join(wasmDir, wasmFile);
+      const wasmPath = path.join(
+        path.dirname(require.resolve(wasmRel)),
+        path.basename(wasmRel)
+      );
       const lang = await Language.load(wasmPath);
       loadedLanguages.set(name, lang);
     } catch (err) {
@@ -173,6 +176,9 @@ function isExtractableType(type: string): boolean {
     'type_declaration',
     'struct_type',
     'interface_type',
+    'import_statement',
+    'import_from_statement',
+    'import_declaration',
   ]);
   return extractableTypes.has(type);
 }
@@ -197,15 +203,32 @@ function mapNodeType(type: string): string {
     type_declaration: 'type',
     struct_type: 'struct',
     interface_type: 'interface',
+    import_statement: 'import',
+    import_from_statement: 'import',
+    import_declaration: 'import',
   };
   return mapping[type] || type;
 }
 
 function getNodeId(node: { type: string; childCount: number; child: (i: number) => any; parent: any; startIndex: number; endIndex: number }, content: string): string {
+  // Search direct children for identifier
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
     if (child && (child.type === 'identifier' || child.type === 'type_identifier')) {
       return content.slice(child.startIndex, child.endIndex);
+    }
+  }
+
+  // Search nested children recursively (for import statements where identifier is nested under dotted_name)
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child) {
+      for (let j = 0; j < child.childCount; j++) {
+        const grandchild = child.child(j);
+        if (grandchild && (grandchild.type === 'identifier' || grandchild.type === 'type_identifier')) {
+          return content.slice(grandchild.startIndex, grandchild.endIndex);
+        }
+      }
     }
   }
 

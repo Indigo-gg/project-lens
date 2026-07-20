@@ -242,7 +242,7 @@ export function bindEvidenceFromGit(
         const changeType = detectChangeType(commit.message);
 
         insertDecisionTrace(db, {
-          id: traceId,
+          trace_id: traceId,
           fact_id: nodeId,
           commit_hash: commit.shortHash,
           author: commit.author,

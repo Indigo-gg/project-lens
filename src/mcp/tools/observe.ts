@@ -4,7 +4,6 @@ import { extractProject } from '../../extractor/index.js';
 
 function validateProjectPath(projectPath: string): { valid: boolean; error?: string } {
   const resolved = path.resolve(projectPath);
-  const cwd = process.cwd();
 
   // Check for path traversal
   if (resolved.includes('..')) {
@@ -20,11 +19,6 @@ function validateProjectPath(projectPath: string): { valid: boolean; error?: str
   const stat = fs.statSync(resolved);
   if (!stat.isDirectory()) {
     return { valid: false, error: `Path is not a directory: ${resolved}` };
-  }
-
-  // Check if path is within allowed范围 (current working directory or its subdirectories)
-  if (!resolved.startsWith(cwd) && resolved !== cwd) {
-    return { valid: false, error: `Path must be within current working directory: ${cwd}` };
   }
 
   return { valid: true };

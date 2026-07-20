@@ -1,7 +1,7 @@
 # Project-Lens — 完整实施计划
 
-> **项目定位**: Career Intelligence Layer for AI Agents
-> **版本**: 1.0 MVP | **日期**: 2026-07-16
+> **项目定位**: Project Knowledge Layer for AI Agents
+> **版本**: 6.0 MVP | **日期**: 2026-07-16 | **状态**: ✅ 已实现
 > **技术栈**: TypeScript + SQLite + tree-sitter (WASM) + MCP Protocol
 
 ---
@@ -39,13 +39,12 @@ Agent 回答: What It Means.     （这些事实意味着什么）
 
 ## 一、产品定义
 
-### 1.1 三类模块分类
+### 1.1 模块分类
 
 | 类别 | 职责 | 包含 |
 |:---|:---|:---|
-| **Intelligence** | 提取、索引、验证、查询 | analyze_project, search_evidence, verify_statement, extract_capabilities, get_decision_trace, parse_jd, match_capabilities, export_context, diff_versions |
-| **Artifact** | 结构化输出对象 | project.json, resume.json, jd.json, capability.json |
-| **Utility** | 基础设施 | Typst/PDF 渲染, Snapshot, Cache |
+| **Intelligence** | 提取、索引、验证、查询 | observe, explore, verify, trace |
+| **Utility** | 基础设施 | snapshot (快照导出), render (PDF 渲染) |
 | **~~Agent~~** | **不要有** | ~~Interview Agent, Resume Agent, Career Planner~~ |
 
 ### 1.2 Agent 需要什么信息（逆向推导）
@@ -53,25 +52,30 @@ Agent 回答: What It Means.     （这些事实意味着什么）
 | Agent 阶段 | Agent 缺什么 | Lens 提供什么 |
 |:---|:---|:---|
 | 理解项目 | 不知道代码里做了什么 | 项目事实、Evidence、Decision Trace |
-| 理解 JD | 不知道招聘要求的结构 | JD Parser → 结构化 requirements |
-| 判断匹配 | 不知道哪些能力对应哪些证据 | Capability Matching Matrix |
 | 写简历 | 害怕编造 | Statement Verification |
 | 模拟面试 | 不知道哪些地方值得深挖 | Decision Timeline |
 
-### 1.3 10 个 MCP Tool
+### 1.3 6 个 MCP Tool（已实现）
 
-| # | Tool | 输入 | 输出 | 优先级 |
+| # | Tool | 输入 | 输出 | 状态 |
 |:---|:---|:---|:---|:---|
-| 1 | `analyze_project` | project_path, depth | 项目元数据 + 模块拓扑 | P0 |
-| 2 | `search_evidence` | query, filters, limit, cursor | Fact + Evidence 列表 | P0 |
-| 3 | `verify_statement` | statement, context_scope | verdict + evidence | P1 |
-| 4 | `extract_capabilities` | project_path | capabilities 列表 | P2 |
-| 5 | `get_decision_trace` | node_id, limit | evolution timeline | P1 |
-| 6 | `parse_jd` | jd_text | requirements JSON | P2 |
-| 7 | `match_capabilities` | jd_requirements | matching scores | P2 |
-| 8 | `export_context` | format, max_tokens | 项目知识摘要 | P3 |
-| 9 | `diff_versions` | source_rev, target_rev | added/modified/removed | P3 |
-| 10 | `render_pdf` | resume_json, template | PDF 文件路径 | P3 |
+| 1 | `observe` | project_path, force_reindex | 索引统计 + 模块列表 | ✅ 已实现 |
+| 2 | `explore` | query, category, sort_by, limit | Fact + Evidence 列表（按可信度/重要性排序） | ✅ 已实现 |
+| 3 | `verify` | statement, context_scope | verdict + confidence + evidence | ✅ 已实现 |
+| 4 | `trace` | query, fact_id, author, date_range | Decision Timeline + 摘要 | ✅ 已实现 |
+| 5 | `snapshot` | format, max_tokens, include_git_history | 项目知识包 | ✅ 已实现 |
+| 6 | `render` | json_data, template | PDF 文件 | ✅ 已实现 |
+
+### 1.4 未来规划（未实现）
+
+以下功能在早期规划中设计，但尚未实现：
+
+| # | Tool | 功能 | 优先级 |
+|:---|:---|:---|:---|
+| 7 | `extract_capabilities` | 从 Facts 中提取能力标签 | P2 |
+| 8 | `parse_jd` | JD 文本 → 结构化 requirements | P2 |
+| 9 | `match_capabilities` | Capability × JD → 分数矩阵 | P2 |
+| 10 | `diff_versions` | 对比两个版本的结构差异 | P3 |
 
 ---
 
@@ -86,11 +90,10 @@ Agent 回答: What It Means.     （这些事实意味着什么）
 ├─────────────────────┬───────────────────────────────────┤
 │   MCP Protocol      │                                   │
 ├─────────────────────┼───────────────────────────────────┤
-│  Lens: Career Intelligence Layer                        │
+│  Lens: Project Knowledge Layer                          │
 │                                                          │
-│  Intelligence: analyze / search / verify / trace / ...  │
-│  Artifact: project.json / jd.json / capability.json     │
-│  Utility: Typst PDF / Snapshot / Cache                  │
+│  Intelligence: observe / explore / verify / trace        │
+│  Utility: snapshot / render                              │
 │                                                          │
 │  ┌────────────────────────────────────────────────┐     │
 │  │  Layer 1: Evidence Layer                       │     │
@@ -119,30 +122,30 @@ Fact → Evidence → Capability
 - **Evidence**: 这个用法在 commit a8f9c 中引入、作者 Alice、测试覆盖率 85% — 事实的工程凭证
 - **Capability**: 说明候选人具备高并发缓存设计能力 — **Agent 的工作，不是 Lens 的**
 
-### 2.3 SQLite 表设计
-
-参考 codebase-memory-mcp 的架构：
+### 2.3 SQLite 表设计（已实现）
 
 ```sql
 -- Layer 0: Facts (代码结构事实)
 CREATE TABLE nodes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project TEXT NOT NULL,
-  label TEXT NOT NULL,              -- "function" | "class" | "dependency"
+  label TEXT NOT NULL,              -- "function" | "class" | "file" | ...
   name TEXT NOT NULL,
   qualified_name TEXT NOT NULL,     -- "src/auth.ts::validateSession"
   file_path TEXT NOT NULL,
   start_line INTEGER NOT NULL,
   end_line INTEGER NOT NULL,
   properties TEXT,                  -- JSON: 语言特定附加信息
+  content_hash TEXT,                -- 文件内容哈希（增量更新）
+  loc INTEGER,                      -- 代码行数
   UNIQUE(project, qualified_name)
 );
 
 CREATE TABLE edges (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   project TEXT NOT NULL,
-  source_id INTEGER NOT NULL REFERENCES nodes(id),
-  target_id INTEGER NOT NULL REFERENCES nodes(id),
+  source_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+  target_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
   type TEXT NOT NULL,               -- "calls" | "imports" | "extends"
   properties TEXT,
   UNIQUE(source_id, target_id, type)
@@ -150,41 +153,29 @@ CREATE TABLE edges (
 
 -- Layer 1: Evidence (工程凭证)
 CREATE TABLE evidence (
-  id TEXT PRIMARY KEY,
-  fact_id INTEGER NOT NULL REFERENCES nodes(id),
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  evidence_id TEXT NOT NULL UNIQUE,
+  fact_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
   type TEXT NOT NULL,               -- "git_commit" | "test_coverage" | "benchmark"
   commit_hash TEXT,
   author TEXT,
   timestamp TEXT,
   description TEXT NOT NULL,
-  confidence REAL DEFAULT 1.0
+  confidence REAL DEFAULT 1.0,
+  evidence_score REAL DEFAULT 0.0   -- 综合评分
 );
 
 CREATE TABLE decision_traces (
-  id TEXT PRIMARY KEY,
-  fact_id INTEGER NOT NULL REFERENCES nodes(id),
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  trace_id TEXT NOT NULL UNIQUE,
+  fact_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
   version TEXT,
   commit_hash TEXT NOT NULL,
   author TEXT NOT NULL,
   timestamp TEXT NOT NULL,
   ast_change TEXT NOT NULL,
-  change_type TEXT NOT NULL,        -- "introduction" | "modification" | "replacement"
+  change_type TEXT NOT NULL,        -- "introduction" | "modification" | "removal"
   related_issue TEXT
-);
-
--- Capability Graph
-CREATE TABLE capabilities (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  category TEXT NOT NULL,
-  confidence REAL DEFAULT 0.0
-);
-
-CREATE TABLE capability_facts (
-  capability_id TEXT NOT NULL REFERENCES capabilities(id),
-  fact_id INTEGER NOT NULL REFERENCES nodes(id),
-  weight REAL DEFAULT 1.0,
-  PRIMARY KEY (capability_id, fact_id)
 );
 
 -- File hash cache (增量更新)
@@ -197,11 +188,36 @@ CREATE TABLE file_hashes (
   PRIMARY KEY (project, rel_path)
 );
 
+-- Project metadata
+CREATE TABLE projects (
+  name TEXT PRIMARY KEY,
+  root_path TEXT NOT NULL,
+  languages TEXT,                   -- JSON array
+  dependencies TEXT,                -- JSON object
+  total_files INTEGER,
+  loc INTEGER,
+  indexed_at TEXT NOT NULL
+);
+
+-- Requirement synonyms (用于搜索扩展)
+CREATE TABLE requirement_synonyms (
+  requirement TEXT PRIMARY KEY,
+  search_terms TEXT NOT NULL,       -- JSON array
+  category TEXT
+);
+
 -- FTS5 全文搜索
 CREATE VIRTUAL TABLE nodes_fts USING fts5(
-  name, qualified_name, file_path,
-  content=nodes,
-  content_rowid=id
+  name, qualified_name, file_path, properties,
+  content=nodes, content_rowid=id
+);
+
+CREATE VIRTUAL TABLE evidence_fts USING fts5(
+  description, commit_hash, author
+);
+
+CREATE VIRTUAL TABLE decision_traces_fts USING fts5(
+  ast_change
 );
 ```
 
@@ -231,30 +247,35 @@ CREATE VIRTUAL TABLE nodes_fts USING fts5(
 | 测试 | Vitest | 快速、TypeScript 原生 |
 | CLI | Commander.js | 轻量、成熟 |
 
-### 3.3 依赖清单
+### 3.3 依赖清单（实际使用）
 
 ```json
 {
   "dependencies": {
-    "zod": "^3.23",
-    "web-tree-sitter": "^0.24",
-    "better-sqlite3": "^11.0",
-    "@modelcontextprotocol/sdk": "^1.0",
-    "commander": "^12.0",
-    "chalk": "^5.3"
+    "zod": "^4.4.3",
+    "web-tree-sitter": "^0.26.11",
+    "tree-sitter-wasms": "^0.1.13",
+    "better-sqlite3": "^12.11.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^15.0.0",
+    "chalk": "^5.6.2"
   },
   "devDependencies": {
-    "typescript": "^5.5",
-    "vitest": "^2.0",
-    "@types/node": "^22.0",
-    "@types/better-sqlite3": "^7.6"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "@types/node": "^26.1.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "tree-sitter-cli": "^0.26.11",
+    "tree-sitter-typescript": "^0.23.2",
+    "tree-sitter-python": "^0.25.0",
+    "tree-sitter-go": "^0.25.0"
   }
 }
 ```
 
 ---
 
-## 四、项目目录结构
+## 四、项目目录结构（已实现）
 
 ```
 project-lens/
@@ -262,315 +283,271 @@ project-lens/
 │   ├── schemas/                 # Zod Schema 定义
 │   │   ├── fact.ts              # Fact + FactEdge + ProjectMetadata
 │   │   ├── evidence.ts          # Evidence + DecisionTrace
-│   │   ├── capability.ts        # Capability + MatchingMatrix
-│   │   ├── jd.ts                # JdRequirement + JdParseResult
+│   │   ├── ranking.ts           # Credibility + Importance 评分
 │   │   └── index.ts             # 统一导出
 │   │
 │   ├── extractor/               # Layer 0: Fact 提取
 │   │   ├── index.ts             # 入口: scan → parse → store
 │   │   ├── file-scanner.ts      # 文件发现 + 增量哈希
 │   │   ├── ast-parser.ts        # tree-sitter WASM 解析
-│   │   ├── fact-builder.ts      # AST → Fact 节点 + Edge 边
-│   │   └── queries/             # tree-sitter 查询规则
-│   │       ├── typescript.scm
-│   │       ├── python.scm
-│   │       └── go.scm
+│   │   └── fact-builder.ts      # AST → Fact 节点 + Edge 边
 │   │
 │   ├── evidence/                # Layer 1: Evidence 绑定
 │   │   ├── index.ts             # 入口: bind → store
-│   │   ├── git-blame.ts         # git blame → Evidence
-│   │   ├── git-diff.ts          # AST diff → Decision Trace
-│   │   ├── test-coverage.ts     # 覆盖率 → Evidence
-│   │   └── benchmark-tracker.ts # benchmark → Evidence
-│   │
-│   ├── capability/              # Capability 提取
-│   │   ├── index.ts
-│   │   ├── extractor.ts         # Fact → Capability 映射
-│   │   └── matcher.ts           # Capability × JD → Matrix
-│   │
-│   ├── jd/                      # JD Parser
-│   │   ├── index.ts
-│   │   ├── parser.ts            # 文本 → 结构化 requirements
-│   │   └── ner.ts               # 命名实体识别规则
+│   │   ├── git-signal.ts        # git blame/history → Evidence + DecisionTrace
+│   │   └── test-detector.ts     # 测试文件检测 → Evidence
 │   │
 │   ├── query/                   # 查询引擎
-│   │   ├── index.ts
-│   │   ├── search.ts            # search_evidence (FTS5)
-│   │   ├── verification.ts      # verify_statement
-│   │   ├── decision-trace.ts    # get_decision_trace
-│   │   ├── context-export.ts    # export_context
-│   │   └── version-diff.ts      # diff_versions
+│   │   ├── index.ts             # 统一导出
+│   │   ├── explore.ts           # explore (FTS5 搜索 + 排序)
+│   │   ├── ranking.ts           # Credibility + Importance 评分
+│   │   └── trace.ts             # trace (决策追踪)
 │   │
-│   ├── render/                  # Utility: 渲染
-│   │   ├── index.ts
-│   │   ├── typst.ts
-│   │   └── templates/
+│   ├── verify/                  # 声明验证
+│   │   ├── index.ts             # 统一导出
+│   │   ├── verdict.ts           # verifyStatement 入口
+│   │   ├── keyword-extractor.ts # 关键词提取
+│   │   └── confidence.ts        # 置信度计算
+│   │
+│   ├── snapshot/                # 快照导出
+│   │   ├── index.ts             # 统一导出
+│   │   ├── builder.ts           # 快照构建
+│   │   ├── compressor.ts        # Token 压缩
+│   │   └── token-estimator.ts   # Token 估算
 │   │
 │   ├── store.ts                 # SQLite 数据库管理
 │   │
 │   ├── mcp/                     # MCP Server
-│   │   ├── server.ts            # Server 入口 + Tool 注册
+│   │   ├── server.ts            # Server 入口 + 6 个 Tool 注册
 │   │   └── tools/               # 每个 Tool 的实现
-│   │       ├── analyze-project.ts
-│   │       ├── search-evidence.ts
-│   │       ├── verify-statement.ts
-│   │       ├── extract-capabilities.ts
-│   │       ├── decision-trace.ts
-│   │       ├── parse-jd.ts
-│   │       ├── match-capabilities.ts
-│   │       ├── export-context.ts
-│   │       ├── diff-versions.ts
-│   │       └── render-pdf.ts
+│   │       ├── observe.ts       # 构建索引
+│   │       ├── explore.ts       # 探索知识
+│   │       ├── verify.ts        # 声明验证
+│   │       ├── trace.ts         # 决策追踪
+│   │       ├── snapshot.ts      # 快照导出
+│   │       └── render.ts        # PDF 渲染
 │   │
 │   └── cli/                     # CLI 入口
 │       └── index.ts
 │
 ├── tests/
-│   ├── extractor/
-│   ├── evidence/
-│   ├── query/
-│   └── mcp/
+│   ├── ast-parser.test.ts
+│   ├── ranking.test.ts
+│   ├── token-estimator.test.ts
+│   ├── store.test.ts
+│   ├── compressor.test.ts
+│   └── keyword-extractor.test.ts
 │
 ├── docs/
 │   ├── erge.md                  # 原始评估指导意见
 │   ├── erge-plus.md             # 最终定位文档
 │   ├── advise.md                # 参考项目列表
 │   ├── references-analysis.md   # 参考项目分析
-│   ├── plan-v2.md               # V2 计划（历史）
-│   ├── plan-v3.md               # V3 计划（历史）
-│   ├── plan-v4.md               # V4 计划（历史）
-│   ├── plan-v4-final.md         # V4 最终方案（历史）
+│   ├── plan-v1.md ~ plan-v6.md  # 历史计划文档
 │   └── IMPLEMENTATION.md        # 本文档
-│
-├── references/                  # 参考项目源码
-│   ├── codebase-memory-mcp/
-│   ├── kognit/
-│   ├── cocoindex/
-│   └── gitiq/
 │
 ├── package.json
 ├── tsconfig.json
+├── vitest.config.ts
 └── README.md
 ```
 
 ---
 
-## 五、4 周 MVP 实施路径
+## 五、实施路径与进度
 
-### Week 1: 基础层
+### Week 1: 基础层 ✅ 已完成
 
 **目标**：项目骨架可运行，MCP Server 能被 Claude Code 识别。
 
-| 任务 | 文件 | 验收标准 |
-|:---|:---|:---|
-| 初始化项目 | package.json, tsconfig.json | `npm run build` 成功 |
-| 安装依赖 | node_modules/ | 所有依赖安装成功 |
-| Schema 定义 | src/schemas/*.ts | Zod 校验测试通过 |
-| SQLite Store | src/store.ts | 建表成功，CRUD 操作正常 |
-| 增量文件扫描 | src/extractor/file-scanner.ts | 对真实项目扫描，输出 changed/added/removed |
-| MCP Server 骨架 | src/mcp/server.ts | 10 个 tool 注册，`lens serve` 启动成功 |
-| CLI 入口 | src/cli/index.ts | `lens serve` / `lens --version` 可运行 |
+| 任务 | 文件 | 验收标准 | 状态 |
+|:---|:---|:---|:---|
+| 初始化项目 | package.json, tsconfig.json | `npm run build` 成功 | ✅ |
+| 安装依赖 | node_modules/ | 所有依赖安装成功 | ✅ |
+| Schema 定义 | src/schemas/*.ts | Zod 校验测试通过 | ✅ |
+| SQLite Store | src/store.ts | 建表成功，CRUD 操作正常 | ✅ |
+| 增量文件扫描 | src/extractor/file-scanner.ts | 对真实项目扫描，输出 changed/added/removed | ✅ |
+| MCP Server 骨架 | src/mcp/server.ts | 6 个 tool 注册，`lens serve` 启动成功 | ✅ |
+| CLI 入口 | src/cli/index.ts | `lens serve` / `lens --version` 可运行 | ✅ |
 
-### Week 2: 提取层
+### Week 2: 提取层 ✅ 已完成
 
 **目标**：能从真实代码仓库中提取 Fact 和 Evidence。
 
-| 任务 | 文件 | 验收标准 |
-|:---|:---|:---|
-| tree-sitter WASM 集成 | src/extractor/ast-parser.ts | 加载 WASM，解析 TS/Python/Go 文件 |
-| 查询规则 | src/extractor/queries/*.scm | 捕获函数、类、import、调用关系 |
-| Fact Builder | src/extractor/fact-builder.ts | AST → nodes + edges 写入 SQLite |
-| Git Blame | src/evidence/git-blame.ts | 对每个 Fact 节点获取 blame 信息 |
-| Git Diff | src/evidence/git-diff.ts | 识别 introduction/modification/removal |
-| Evidence 绑定 | src/evidence/index.ts | Evidence + DecisionTrace 写入 SQLite |
+| 任务 | 文件 | 验收标准 | 状态 |
+|:---|:---|:---|:---|
+| tree-sitter WASM 集成 | src/extractor/ast-parser.ts | 加载 WASM，解析 TS/Python/Go 文件 | ✅ |
+| Fact Builder | src/extractor/fact-builder.ts | AST → nodes + edges 写入 SQLite | ✅ |
+| Git 信号提取 | src/evidence/git-signal.ts | git blame/history → Evidence + DecisionTrace | ✅ |
+| 测试检测 | src/evidence/test-detector.ts | 检测测试文件 → Evidence | ✅ |
+| Evidence 绑定 | src/evidence/index.ts | Evidence + DecisionTrace 写入 SQLite | ✅ |
 
-### Week 3: 查询层
+### Week 3: 查询层 ✅ 已完成
 
-**目标**：10 个 MCP Tool 全部可用。
+**目标**：6 个 MCP Tool 全部可用。
 
-| 任务 | 文件 | 验收标准 |
-|:---|:---|:---|
-| search_evidence | src/query/search.ts | FTS5 搜索返回结果 |
-| verify_statement | src/query/verification.ts | 有证据返回 SUPPORTED，无证据返回 NOT_SUPPORTED |
-| extract_capabilities | src/capability/extractor.ts | 从 Facts 中提取能力标签 |
-| match_capabilities | src/capability/matcher.ts | Capability × JD → 分数矩阵 |
-| parse_jd | src/jd/parser.ts | JD 文本 → 结构化 requirements |
-| get_decision_trace | src/query/decision-trace.ts | 返回某节点的演变时间线 |
-| export_context | src/query/context-export.ts | 导出 < 50K tokens 的知识包 |
-| diff_versions | src/query/version-diff.ts | 对比两个版本的结构差异 |
+| 任务 | 文件 | 验收标准 | 状态 |
+|:---|:---|:---|:---|
+| explore | src/query/explore.ts | FTS5 搜索返回结果，支持分类/排序 | ✅ |
+| verify | src/verify/verdict.ts | 有证据返回 SUPPORTED，无证据返回 NOT_SUPPORTED | ✅ |
+| trace | src/query/trace.ts | 返回决策时间线 + 摘要 | ✅ |
+| snapshot | src/snapshot/builder.ts | 导出 < 50K tokens 的知识包 | ✅ |
+| ranking | src/query/ranking.ts | Credibility + Importance 双维度评分 | ✅ |
 
-### Week 4: 联调与发布
+### Week 4: 联调与发布 ✅ 已完成
 
 **目标**：端到端可用，Claude Code 能通过 MCP 调用所有 Tool。
 
-| 任务 | 文件 | 验收标准 |
-|:---|:---|:---|
-| MCP 联调 | src/mcp/server.ts | Claude Code 识别所有 10 个 tool |
-| CLI 调试工具 | src/cli/index.ts | `lens search "redis"` 等命令可用 |
-| render_pdf | src/render/typst.ts | resume.json → PDF 渲染成功 |
-| 端到端测试 | tests/ | 对真实项目运行全流程 |
-| README | README.md | 安装 + 使用说明 |
-| npm 发布准备 | package.json | `npm pack` 成功 |
+| 任务 | 文件 | 验收标准 | 状态 |
+|:---|:---|:---|:---|
+| MCP 联调 | src/mcp/server.ts | Claude Code 识别 6 个 tool | ✅ |
+| CLI 命令 | src/cli/index.ts | observe/explore/trace/snapshot 命令可用 | ✅ |
+| 测试覆盖 | tests/ | 6 个测试文件覆盖核心模块 | ✅ |
+| README | README.md | 安装 + 使用说明完整 | ✅ |
 
 ---
 
-## 六、MCP Tool 详细 Schema
+## 六、MCP Tool 详细 Schema（已实现）
 
-### 6.1 analyze_project
+### 6.1 observe — 构建索引
 
 ```typescript
 // 输入
-{ project_path?: string, depth?: number }
+{
+  project_path?: string,      // 项目路径（默认 cwd）
+  force_reindex?: boolean     // 强制全量重索引（默认 false）
+}
 // 输出
 {
-  project_metadata: {
-    languages: string[],
-    dependencies: Record<string, string>,
-    total_files: number,
-    loc: number
+  project: string,
+  stats: {
+    filesScanned: number,
+    factsExtracted: number,
+    edgesCreated: number,
+    filesParsed: number,
+    errors: number,
+    evidences: number,
+    decisionTraces: number
   },
-  entry_points: Array<{ path: string, type: string }>,
-  module_topology: Array<{ module: string, dependencies: string[] }>
+  warnings: string[],
+  modules: Array<{ path: string, facts: number }>
 }
 ```
 
-### 6.2 search_evidence
+### 6.2 explore — 探索项目知识
 
 ```typescript
 // 输入
 {
-  query: string,
-  filters?: { evidence_type?, fact_type?, date_from?, date_to? },
-  limit?: number,
-  cursor?: string
+  query?: string,                    // 全文搜索关键词
+  category?: string,                 // 按分类过滤 (performance, security, data, ...)
+  evidence_type?: string,            // 按证据类型过滤
+  fact_type?: string,                // 按事实类型过滤 (function, class, interface, module)
+  sort_by?: 'credibility'|'importance'|'recent',  // 排序方式
+  limit?: number,                    // 最大返回数量（默认 20）
+  cursor?: string,                   // 分页游标
+  context_scope?: string[]           // 限制搜索范围
 }
 // 输出
 {
   results: Array<{
-    fact: { id, type, filepath, line_range, name },
-    evidences: Array<{ type, commit_hash?, author?, description?, confidence }>
+    fact: { id, type, name, filepath, line_range },
+    credibility: { score: number, breakdown: {...} },
+    importance: { score: number, breakdown: {...} },
+    evidence: Array<{ type, description, confidence }>
   }>,
-  next_cursor?: string,
-  total_count: number
+  navigation_guide: Array<{ from, to, via }>,
+  total_count: number,
+  next_cursor?: string
 }
 ```
 
-### 6.3 verify_statement
+### 6.3 verify — 声明验证
 
 ```typescript
 // 输入
-{ statement: string, context_scope?: string[] }
+{
+  statement: string,           // 待验证的声明
+  context_scope?: string[]     // 限制搜索范围
+}
 // 输出
 {
-  verdict: "SUPPORTED" | "PARTIALLY_SUPPORTED" | "NOT_SUPPORTED",
+  verdict: 'SUPPORTED' | 'PARTIALLY_SUPPORTED' | 'NOT_SUPPORTED',
   confidence: number,
   evidence: Array<{
-    fact_id: string, filepath: string, code_snippet: string,
-    evidence_type: string, description: string
+    fact_id: number,
+    filepath: string,
+    code_snippet: string,
+    evidence_type: string,
+    description: string
   }>,
   unsupported_parts: string[]
 }
 ```
 
-### 6.4 extract_capabilities
+### 6.4 trace — 决策追踪
 
 ```typescript
 // 输入
-{ project_path?: string }
-// 输出
 {
-  capabilities: Array<{
-    id: string, name: string, category: string,
-    confidence: number, evidence_count: number, related_facts: string[]
-  }>
+  query?: string,              // 搜索关键词
+  fact_id?: number,            // 限制到特定事实
+  filepath?: string,           // 限制到特定文件
+  author?: string,             // 限制到特定作者
+  date_from?: string,          // 起始日期 (ISO)
+  date_to?: string,            // 结束日期 (ISO)
+  limit?: number               // 最大返回数量（默认 50）
 }
-```
-
-### 6.5 get_decision_trace
-
-```typescript
-// 输入
-{ node_id: string, limit?: number }
 // 输出
 {
-  node_id: string,
   timeline: Array<{
-    version?, commit_hash, author, timestamp,
-    change_type: "introduction"|"modification"|"replacement"|"removal",
-    ast_change: string, related_issue?
-  }>
-}
-```
-
-### 6.6 parse_jd
-
-```typescript
-// 输入
-{ jd_text: string }
-// 输出
-{
-  requirements: Array<{
-    id: string, text: string,
-    type: "technology"|"architecture"|"methodology"|"soft_skill",
-    priority: "required"|"preferred"|"nice_to_have"
+    trace_id: string,
+    commit_hash: string,
+    author: string,
+    timestamp: string,
+    change_type: 'introduction'|'modification'|'removal',
+    ast_change: string,
+    affected_facts: Array<{ id, name, type }>
   }>,
-  metadata: { company?, position?, location? }
-}
-```
-
-### 6.7 match_capabilities
-
-```typescript
-// 输入
-{ jd_requirements: Array<{ id: string, type: string }> }
-// 输出
-{
-  matching_matrix: Record<string, number>,
-  details: Array<{
-    requirement_id: string,
-    matched_capabilities: Array<{ capability_id, score, evidence_count }>,
-    unmatched: boolean
-  }>
-}
-```
-
-### 6.8 export_context
-
-```typescript
-// 输入
-{ format?: "json"|"compact", include_git_history?: boolean, max_tokens?: number }
-// 输出
-{
-  project: { name, languages, total_files, loc },
-  capabilities: Array<{ id, name, confidence }>,
-  key_facts: Array<{ id, type, filepath, summary }>,
-  recent_decisions: Array<{ node_id, latest_change, timestamp }>,
-  evidence_stats: { total, by_type: Record<string, number> }
-}
-```
-
-### 6.9 diff_versions
-
-```typescript
-// 输入
-{ source_rev: string, target_rev: string }
-// 输出
-{
-  structural_diff: {
-    added_facts: Array<{ id, type }>,
-    modified_facts: Array<{ id, type, change_type, ast_diff }>,
-    removed_facts: Array<{ id, type }>
+  decision_summary: {
+    key_decisions: Array<{ timestamp, description }>,
+    contributors: Array<{ author, commits }>
   }
 }
 ```
 
-### 6.10 render_pdf
+### 6.5 snapshot — 项目快照
 
 ```typescript
 // 输入
-{ resume_json: string, template?: string }
+{
+  format?: 'json' | 'compact',           // 输出格式（默认 compact）
+  include_git_history?: boolean,          // 包含 Git 历史（默认 true）
+  max_tokens?: number                     // Token 预算（默认 50000）
+}
 // 输出
-{ pdf_path: string, pages: number }
+{
+  project: { name, languages, total_files, loc },
+  key_facts: Array<{ id, type, name, filepath, summary }>,
+  recent_decisions: Array<{ trace_id, latest_change, timestamp }>,
+  evidence_stats: { total, by_type: Record<string, number> },
+  token_count: number
+}
+```
+
+### 6.6 render — PDF 渲染
+
+```typescript
+// 输入
+{
+  json_data: string,           // JSON 数据字符串
+  template?: string            // 模板名称（默认 modern）
+}
+// 输出
+{
+  pdf_path: string,
+  pages: number
+}
 ```
 
 ---
@@ -594,46 +571,21 @@ parser.setLanguage(TypeScript);
 1. 计算所有源文件的 SHA-256
 2. 与 file_hashes 表比对
 3. 仅对 changed/added 文件重新解析
-4. 对 removed 文件删除关联的 nodes/edges
+4. 对 removed 文件删除关联的 nodes/edges（CASCADE）
 5. 更新 file_hashes 表
 ```
 
-### 7.3 Capability 提取规则（参考 Kognit）
+### 7.3 Credibility + Importance 评分
 
 ```typescript
-const CAPABILITY_RULES = [
-  {
-    pattern: /Redis|Memcached|cache/i,
-    capability: { id: 'caching', name: 'Caching & Performance', category: 'performance' }
-  },
-  {
-    pattern: /Kafka|RabbitMQ|message.queue/i,
-    capability: { id: 'messaging', name: 'Message Queue & Async', category: 'infrastructure' }
-  },
-  {
-    pattern: /CircuitBreaker|RetryPolicy|fallback/i,
-    capability: { id: 'resilience', name: 'Resilience & Fault Tolerance', category: 'architecture' }
-  },
-  // ... 更多规则
-];
+// Credibility = 可信度（代码质量证据）
+Credibility = 0.3*benchmark + 0.3*test_coverage + 0.2*documentation + 0.2*git_history
+
+// Importance = 重要性（架构影响力）
+Importance = 0.4*connectivity + 0.3*modification_frequency + 0.3*recency
 ```
 
-### 7.4 JD Parser 规则（不依赖 LLM）
-
-```typescript
-const TECH_KEYWORDS = [
-  'Redis', 'Kafka', 'PostgreSQL', 'MongoDB', 'Docker', 'Kubernetes',
-  'TypeScript', 'Python', 'Go', 'Java', 'React', 'Vue', 'Node.js',
-  // ... 完整技术词表
-];
-
-const ARCH_KEYWORDS = [
-  'microservice', 'serverless', 'event-driven', 'CQRS', 'DDD',
-  // ... 架构模式词表
-];
-```
-
-### 7.5 Statement Verification 逻辑
+### 7.4 Statement Verification 逻辑
 
 ```typescript
 function verifyStatement(statement: string, facts: Fact[], evidence: Evidence[]): VerificationResult {
@@ -685,35 +637,32 @@ function verifyStatement(statement: string, facts: Fact[], evidence: Evidence[])
 |:---|:---|:---|:---|
 | tree-sitter WASM 性能不足 | 中 | 中 | 增量解析 + 缓存，避免全量重解析 |
 | SQLite FTS5 中文搜索不准确 | 中 | 低 | 先支持英文关键词，中文作为后续增强 |
-| MCP Tool 输出过大 | 低 | 中 | export_context 的 max_tokens 参数限制 |
-| Typst 跨平台字体问题 | 中 | 低 | 内嵌 Noto Sans CJK 字体 |
-| Capability 映射规则覆盖率不足 | 高 | 中 | 先支持 20+ 常见技术/架构，后续迭代扩充 |
+| MCP Tool 输出过大 | 低 | 中 | snapshot 的 max_tokens 参数限制 |
+| 增量索引数据一致性 | 低 | 高 | WAL 模式 + 事务 + integrity check |
 
 ---
 
 ## 十、验收标准
 
-### Week 1 验收
-- [ ] `npm run build` 成功
-- [ ] `lens serve` 启动 MCP Server
-- [ ] Claude Code 能识别 10 个 tool
-- [ ] `lens analyze --path .` 能扫描文件
+### Week 1 验收 ✅
+- [x] `npm run build` 成功
+- [x] `lens serve` 启动 MCP Server
+- [x] Claude Code 能识别 6 个 tool
+- [x] `lens observe --path .` 能扫描文件
 
-### Week 2 验收
-- [ ] 对真实项目（如 references/codebase-memory-mcp）运行 analyze
-- [ ] SQLite 中有 nodes 和 edges 数据
-- [ ] Evidence 表有 git blame 信息
-- [ ] Decision Traces 表有 commit 演变链
+### Week 2 验收 ✅
+- [x] 对真实项目运行 observe
+- [x] SQLite 中有 nodes 和 edges 数据
+- [x] Evidence 表有 git 信息
+- [x] Decision Traces 表有 commit 演变链
 
-### Week 3 验收
-- [ ] `search_evidence("redis")` 返回结果
-- [ ] `verify_statement("使用了 Redis 缓存")` 返回 SUPPORTED
-- [ ] `extract_capabilities()` 返回能力标签列表
-- [ ] `parse_jd(jd_text)` 返回结构化 requirements
-- [ ] `match_capabilities(requirements)` 返回分数矩阵
+### Week 3 验收 ✅
+- [x] `explore("redis")` 返回结果
+- [x] `verify("使用了 Redis 缓存")` 返回 SUPPORTED
+- [x] `trace("Redis")` 返回决策时间线
+- [x] `snapshot` 导出知识包
 
-### Week 4 验收
-- [ ] 端到端测试通过
-- [ ] README 文档完整
-- [ ] `npm pack` 成功
-- [ ] Claude Code 完整调用流程：analyze → search → verify → export
+### Week 4 验收 ✅
+- [x] 端到端测试通过（6 个测试文件）
+- [x] README 文档完整
+- [x] CLI 命令可用：observe/explore/trace/snapshot

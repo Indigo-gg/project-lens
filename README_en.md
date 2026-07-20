@@ -1,10 +1,12 @@
-﻿# Project-Lens
+# Project-Lens
 
-**Project Understanding Layer for AI Agents**
+**Project Knowledge Layer for AI Agents**
 
 > Lens maintains *project knowledge*. Agent maintains *career knowledge*.
 >
 > Lens answers **What Exists**. Agent answers **What It Means**.
+
+**Version 6.0** — Redesigned with clear tool responsibilities
 
 ---
 
@@ -32,7 +34,7 @@ Project-Lens solves this by:
 
 ## Core Architecture
 
-\\\
+```
 +-------------------------------------------------------+
 |                   AI Agent (Claude)                    |
 |            "What does this mean for the JD?"           |
@@ -50,56 +52,62 @@ Project-Lens solves this by:
 |  |(Confidence)|  |(Export)  |  |  (Typst)         |  |
 |  +-----------+  +----------+  +------------------+  |
 +-------------------------------------------------------+
-\\\
+```
 
-## The 5 Tools
+## The 6 Tools
 
-### 1. nalyze_project -- Build the Index
+### 1. observe — Build the Index
 
-Scans a project and builds a knowledge index: facts (functions, classes, modules), edges (relationships), and evidence (git commits, tests, benchmarks).
+Scans a project and builds a knowledge index: facts (functions, classes, modules), edges (relationships), and evidence (git commits, tests).
 
-\\\ash
-lens analyze --path ./my-project
-\\\
+```bash
+lens observe --path ./my-project
+```
 
-### 2. search_evidence -- Universal Search
+### 2. explore — Explore Project Knowledge
 
-The single search entry point for all queries. Supports keyword search, category filtering, requirement matching (auto-expands "Redis" to ["redis", "ioredis", "cache", "pub/sub", "session"]), and decision trace lookup.
+Explores project knowledge and provides navigation paths. Answers "how does this feature work?"
 
-\\\ash
-lens search "authentication" --category security --limit 10
-lens search --requirement "Redis"
-\\\
+```bash
+lens explore "authentication" --category security --limit 10
+```
 
-Results are ranked by a composite evidence score:
+Results are ranked by credibility and importance:
 
-\\\
-Score = 0.25*Benchmark + 0.20*Tests + 0.20*GitEvolution
-     + 0.10*LOC + 0.15*Recency + 0.10*Complexity
-\\\
+```
+Credibility = 0.3*benchmark + 0.3*test_coverage + 0.2*documentation + 0.2*git_history
+Importance = 0.4*connectivity + 0.3*modification_frequency + 0.3*recency
+```
 
-This means Lens knows that a function with benchmark tests, recent commits, and high complexity is more significant than an untouched utility.
+### 3. trace — Decision History
 
-### 3. erify_statement -- Truth Check
+Understands decision history, traces why something was implemented. Answers "why was this done this way?"
+
+```bash
+lens trace "Redis" --limit 10
+lens trace --fact-id 123
+```
+
+### 4. verify — Statement Verification
 
 Verifies whether a claim has supporting code evidence. Use it to validate resume bullets, PR descriptions, or design docs against reality.
 
-\\\
+```
 Input:  "Optimized Redis caching performance"
 Output: { confidence: 0.82, evidence: [...], unsupportedParts: [] }
-\\\
+```
 
-### 4. export_snapshot -- Compact Project Snapshot
+### 5. snapshot — Project Snapshot
 
 Exports the entire project knowledge package in under 50K tokens -- small enough to fit in an agent's context window. Includes key facts, recent decisions, and top evidence, with full commit history intentionally omitted.
 
-\\\ash
+```bash
 lens snapshot --format compact --max-tokens 50000
-\\\
+```
 
-### 5. ender_resume -- Render to PDF
+### 6. render — PDF Rendering
 
-Takes a structured resume JSON and renders it to PDF using Typst.
+Renders JSON data to PDF using Typst.
 
 ## How It Works
 
@@ -126,31 +134,34 @@ The agent can export a compact snapshot for broad understanding, or verify speci
 
 ## Installation
 
-\\\ash
+```bash
 npm install project-lens
-\\\
+```
 
 ## Quick Start
 
-\\\ash
+```bash
 # 1. Index your project
-lens analyze --path ./my-project
+lens observe --path ./my-project
 
-# 2. Search for evidence
-lens search "database migration" --limit 5
+# 2. Explore project knowledge
+lens explore "database migration" --limit 5
 
-# 3. Export a snapshot for your AI agent
+# 3. Trace decision history
+lens trace "Redis" --limit 10
+
+# 4. Export a snapshot for your AI agent
 lens snapshot --format compact
 
-# 4. Start the MCP server (for Claude Code integration)
+# 5. Start the MCP server (for Claude Code integration)
 lens serve
-\\\
+```
 
 ## Integration with AI Agents
 
-Project-Lens exposes all 5 tools through the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). Connect it to Claude Code, Cursor, or any MCP-compatible agent:
+Project-Lens exposes all 6 tools through the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). Connect it to Claude Code, Cursor, or any MCP-compatible agent:
 
-\\\json
+```json
 {
   "mcpServers": {
     "project-lens": {
@@ -159,7 +170,7 @@ Project-Lens exposes all 5 tools through the [Model Context Protocol](https://mo
     }
   }
 }
-\\\
+```
 
 Once connected, the agent can search your project's knowledge graph, verify statements against code evidence, and export compact project snapshots -- all without reading raw files.
 
@@ -182,12 +193,11 @@ More languages can be added by writing Tree-sitter .scm query files.
 
 ## Roadmap
 
-- [x] V5 architecture redesign (5 tools, unified search)
-- [x] Fact extraction via Tree-sitter
-- [x] Git evidence binding with ranking
-- [x] Statement verification with confidence scoring
-- [x] Compact snapshot export with token budgeting
-- [ ] PDF resume rendering (Typst)
+- [x] V6 architecture redesign (6 tools, clear responsibilities)
+- [x] Credibility + Importance dual scoring
+- [x] Decision trace as independent tool
+- [x] Navigation paths
+- [ ] PDF rendering improvements (Typst)
 - [ ] Additional language support (Rust, Java, C#)
 - [ ] CI/CD integration (auto-index on push)
 - [ ] Web UI for exploring the knowledge graph

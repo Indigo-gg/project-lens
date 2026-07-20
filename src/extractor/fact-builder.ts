@@ -153,15 +153,23 @@ function getNodeEndOffset(lines: string[], line: number): number {
 
 function extractImportPath(node: AstNode): string | null {
   const text = (node.properties.text as string) ?? '';
-  // Try to extract import path from text
-  const match = text.match(/from\s+['"]([^'"]+)['"]/);
-  if (match) return match[1];
+  // TypeScript/JS: import X from 'path' or import 'path'
+  const tsMatch = text.match(/from\s+['"]([^'"]+)['"]/);
+  if (tsMatch) return tsMatch[1];
 
-  const match2 = text.match(/import\s+['"]([^'"]+)['"]/);
-  if (match2) return match2[1];
+  const tsDirect = text.match(/^import\s+['"]([^'"]+)['"]/);
+  if (tsDirect) return tsDirect[1];
 
-  const match3 = text.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/);
-  if (match3) return match3[1];
+  const tsDynamic = text.match(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+  if (tsDynamic) return tsDynamic[1];
+
+  // Python: from X import Y → extract X
+  const pyFrom = text.match(/^from\s+(\S+)\s+import\b/);
+  if (pyFrom) return pyFrom[1];
+
+  // Python: import X (or import X, Y, Z) → extract first X
+  const pyImport = text.match(/^import\s+(\S+)/);
+  if (pyImport) return pyImport[1];
 
   return null;
 }

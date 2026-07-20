@@ -111,7 +111,8 @@ function initSchema(db: Database.Database) {
     );
 
     CREATE TABLE IF NOT EXISTS evidence (
-      id TEXT PRIMARY KEY,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      evidence_id TEXT NOT NULL UNIQUE,
       fact_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
       commit_hash TEXT,
@@ -123,7 +124,8 @@ function initSchema(db: Database.Database) {
     );
 
     CREATE TABLE IF NOT EXISTS decision_traces (
-      id TEXT PRIMARY KEY,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      trace_id TEXT NOT NULL UNIQUE,
       fact_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
       version TEXT,
       commit_hash TEXT NOT NULL,
@@ -159,12 +161,10 @@ function initSchema(db: Database.Database) {
         content=nodes, content_rowid=id
       );
       CREATE VIRTUAL TABLE IF NOT EXISTS evidence_fts USING fts5(
-        description, commit_hash, author,
-        content=evidence, content_rowid=id
+        description, commit_hash, author
       );
       CREATE VIRTUAL TABLE IF NOT EXISTS decision_traces_fts USING fts5(
-        ast_change,
-        content=decision_traces, content_rowid=id
+        ast_change
       );
     `);
   } catch {
@@ -355,7 +355,7 @@ export function insertEvidence(db: Database.Database, ev: {
   evidence_score?: number;
 }) {
   db.prepare(`
-    INSERT OR REPLACE INTO evidence (id, fact_id, type, commit_hash, author, timestamp, description, confidence, evidence_score)
+    INSERT OR REPLACE INTO evidence (evidence_id, fact_id, type, commit_hash, author, timestamp, description, confidence, evidence_score)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     ev.id, ev.fact_id, ev.type,
@@ -366,7 +366,7 @@ export function insertEvidence(db: Database.Database, ev: {
 
 // Decision trace operations
 export function insertDecisionTrace(db: Database.Database, dt: {
-  id: string;
+  trace_id: string;
   fact_id: number;
   version?: string;
   commit_hash: string;
@@ -377,10 +377,10 @@ export function insertDecisionTrace(db: Database.Database, dt: {
   related_issue?: string;
 }) {
   db.prepare(`
-    INSERT OR REPLACE INTO decision_traces (id, fact_id, version, commit_hash, author, timestamp, ast_change, change_type, related_issue)
+    INSERT OR REPLACE INTO decision_traces (trace_id, fact_id, version, commit_hash, author, timestamp, ast_change, change_type, related_issue)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    dt.id, dt.fact_id, dt.version ?? null,
+    dt.trace_id, dt.fact_id, dt.version ?? null,
     dt.commit_hash, dt.author, dt.timestamp,
     dt.ast_change, dt.change_type, dt.related_issue ?? null
   );
@@ -395,15 +395,11 @@ export function syncNodesFts(db: Database.Database) {
 }
 
 export function syncEvidenceFts(db: Database.Database) {
-  try {
-    db.exec(`INSERT INTO evidence_fts(evidence_fts) VALUES('rebuild')`);
-  } catch { /* ignore */ }
+  // Triggers handle incremental sync; no rebuild needed for standalone FTS
 }
 
 export function syncDecisionTracesFts(db: Database.Database) {
-  try {
-    db.exec(`INSERT INTO decision_traces_fts(decision_traces_fts) VALUES('rebuild')`);
-  } catch { /* ignore */ }
+  // Triggers handle incremental sync; no rebuild needed for standalone FTS
 }
 
 // Project metadata

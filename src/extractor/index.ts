@@ -111,6 +111,15 @@ export async function extractProject(
 
         if (!isSupportedFile(fileData.fullPath)) {
           // Store non-parseable files as simple nodes
+          const props: Record<string, unknown> = { size: fileHash.size };
+
+          // For text-based documentation files, store content for FTS5 search
+          const ext = path.extname(fileData.fullPath).toLowerCase();
+          if (['.md', '.txt', '.json', '.yaml', '.yml', '.toml', '.cfg', '.ini'].includes(ext)) {
+            const maxContent = 5000; // Limit content size for performance
+            props.text = fileData.content.substring(0, maxContent);
+          }
+
           insertNode(db, {
             project: projectName,
             label: 'file',
@@ -119,7 +128,7 @@ export async function extractProject(
             file_path: fileHash.relPath,
             start_line: 1,
             end_line: 1,
-            properties: { size: fileHash.size },
+            properties: props,
           });
           factsExtracted++;
           continue;
